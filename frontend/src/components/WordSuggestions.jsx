@@ -52,7 +52,7 @@ export default function WordSuggestions({ letterBuffer, onSelect }) {
                 {Math.round((s.score ?? 0) * 100)}%
               </span>
             </button>
-          ))}
+          ))}S
       </div>
     </div>
   )

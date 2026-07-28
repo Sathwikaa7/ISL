@@ -1,8 +1,9 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from backend.utils.translator import Translator
 from backend.predictors.alphabet_predictor import predict
+from backend.utils.rapidfuzz_utils import load_words, make_suggester
 
 import tensorflow as tf
 import numpy as np
@@ -18,6 +19,7 @@ import time
 from backend import state
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DICTIONARY_PATH = os.path.join(os.path.dirname(BASE_DIR), "data", "english_words.txt")
 
 # -----------------------------------
 # Flask App
@@ -41,6 +43,7 @@ word_model = tf.keras.models.load_model(WORD_MODEL_PATH)
 print("Models loaded successfully!")
 
 translator = Translator()
+word_suggestions = make_suggester(load_words(DICTIONARY_PATH))
 
 # -----------------------------------
 # Class Names
@@ -77,6 +80,16 @@ def home():
 @app.route("/api/health")
 def health():
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/suggest")
+def suggest_words():
+    """Return word choices once the user has signed at least three letters."""
+    letter_sequence = request.args.get("prefix", "")
+    if not letter_sequence.strip():
+        return jsonify({"suggestions": []})
+
+    return jsonify({"suggestions": word_suggestions(letter_sequence)})
 
 # -----------------------------------
 # Socket Events
