@@ -1,5 +1,6 @@
 import os
 import json
+import string
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -13,9 +14,14 @@ MODEL_DIR = os.path.join("..", "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 IMAGE_SIZE = (224, 224)
-BATCH_SIZE = 16
+BATCH_SIZE = 32
 STAGE1_EPOCHS = 5
-STAGE2_EPOCHS = 50
+STAGE2_EPOCHS = 15
+
+# The downloaded archive also contains a non-letter folder named "{".  Keep
+# the alphabet recognizer deliberately restricted to A-Z so its model outputs
+# always match alphabet_classes.json and the website's letter buffer.
+CLASS_NAMES = list(string.ascii_lowercase)
 
 # ==========================================
 # Load Dataset
@@ -27,7 +33,8 @@ train_ds = tf.keras.utils.image_dataset_from_directory(
     subset="training",
     seed=42,
     image_size=IMAGE_SIZE,
-    batch_size=BATCH_SIZE
+    batch_size=BATCH_SIZE,
+    class_names=CLASS_NAMES
 )
 
 val_ds = tf.keras.utils.image_dataset_from_directory(
@@ -36,10 +43,11 @@ val_ds = tf.keras.utils.image_dataset_from_directory(
     subset="validation",
     seed=42,
     image_size=IMAGE_SIZE,
-    batch_size=BATCH_SIZE
+    batch_size=BATCH_SIZE,
+    class_names=CLASS_NAMES
 )
 
-class_names = train_ds.class_names
+class_names = CLASS_NAMES
 num_classes = len(class_names)
 
 print("\nClasses:")

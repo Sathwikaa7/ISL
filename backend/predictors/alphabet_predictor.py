@@ -44,6 +44,7 @@ hands = mp_hands.Hands(
 def predict(image):
 
     frame = np.array(image)
+    Image.fromarray(frame).save("debug_received.jpg")
 
     h, w = frame.shape[:2]
 
@@ -53,10 +54,16 @@ def predict(image):
         print("[ALPHABET] No hand detected in captured frame")
         return None, 0
 
-    hand = results.multi_hand_landmarks[0]
-
-    xs = [lm.x for lm in hand.landmark]
-    ys = [lm.y for lm in hand.landmark]
+    # ISL alphabet signs can use both hands.  Crop the union of every detected
+    # hand instead of taking only the first one; otherwise two-hand letters
+    # are reduced to an unrelated one-hand image before classification.
+    landmarks = [
+        landmark
+        for hand_landmarks in results.multi_hand_landmarks
+        for landmark in hand_landmarks.landmark
+    ]
+    xs = [landmark.x for landmark in landmarks]
+    ys = [landmark.y for landmark in landmarks]
 
     # ------------------------------------
     # Bounding box with square crop

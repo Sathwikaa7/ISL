@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { connectSocket, disconnectSocket, getSocket, sendFrame } from '../services/socket'
 
+// Capture only this central region. It is wide enough for ISL two-hand signs
+// while giving the hand detector a consistent, uncluttered input.
+const CAPTURE_GUIDE = { x: 0.15, y: 0.16, width: 0.70, height: 0.66 }
+
 export default function WebcamPanel({
   sessionId,
   mode,
@@ -20,6 +24,7 @@ export default function WebcamPanel({
   const [confidence, setConfidence] = useState(0)
   const [fps, setFps] = useState(0)
   const [countdown, setCountdown] = useState(null)
+  const [captureStatus, setCaptureStatus] = useState(null)
 
   useEffect(() => {
     modeRef.current = mode
@@ -59,7 +64,8 @@ export default function WebcamPanel({
     socket.on('prediction', (payload) => {
       const { label, confidence: conf, fps: serverFps, status } = payload || {}
       if (label === undefined) return
-      setCurrentLetter(label || status || '—')
+      setCurrentLetter(label || null)
+      setCaptureStatus(status || null)
       setConfidence(conf ?? 0)
       if (serverFps) setFps(serverFps)
       onPrediction?.({ label, confidence: conf ?? 0 })
@@ -109,12 +115,29 @@ export default function WebcamPanel({
   if (!video || !canvas) return
 
   const ctx = canvas.getContext("2d")
-  canvas.width = video.videoWidth || 640
-  canvas.height = video.videoHeight || 480
+  const sourceWidth = video.videoWidth || 640
+  const sourceHeight = video.videoHeight || 480
+  const sourceX = Math.round(sourceWidth * CAPTURE_GUIDE.x)
+  const sourceY = Math.round(sourceHeight * CAPTURE_GUIDE.y)
+  const guideWidth = Math.round(sourceWidth * CAPTURE_GUIDE.width)
+  const guideHeight = Math.round(sourceHeight * CAPTURE_GUIDE.height)
+
+  canvas.width = guideWidth
+  canvas.height = guideHeight
 
   // Keep the preview mirrored in CSS, but send the original camera pixels to
   // the model. This matches the orientation of normal training images.
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+  ctx.drawImage(
+    video,
+    sourceX,
+    sourceY,
+    guideWidth,
+    guideHeight,
+    0,
+    0,
+    guideWidth,
+    guideHeight
+  )
 
   sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, mode)
 }
@@ -161,6 +184,21 @@ export default function WebcamPanel({
           />
         )}
         <canvas ref={canvasRef} className="hidden" />
+
+        {!cameraError && (
+          <div className="pointer-events-none absolute left-[15%] top-[16%] h-[66%] w-[70%] rounded-xl border-2 border-teal-400/90 bg-teal-400/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)]">
+            <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-teal-400 px-3 py-1 font-mono text-[10px] font-semibold tracking-wide text-ink-950">
+              PLACE BOTH HANDS HERE
+            </div>
+            <div className="absolute inset-y-3 left-1/2 border-l border-dashed border-teal-300/50" />
+          </div>
+        )}
+
+        {captureStatus && (
+          <div className="absolute left-4 right-4 top-[18%] rounded-lg bg-amber-500/95 px-3 py-2 text-center text-sm font-semibold text-ink-950 shadow-lg">
+            {captureStatus}
+          </div>
+        )}
 
         {/* Recording indicator */}
         {!isFrozen && !cameraError && countdown === null && (
