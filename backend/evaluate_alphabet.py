@@ -36,8 +36,8 @@ for true_class in class_names:
         img = Image.open(path).convert("RGB")
         img = img.resize((224,224))
 
+        # The saved model contains MobileNetV3 preprocessing.
         img = np.array(img, dtype=np.float32)
-        img = tf.keras.applications.mobilenet_v3.preprocess_input(img)
         img = np.expand_dims(img,0)
 
         prediction = model.predict(img, verbose=0)[0]

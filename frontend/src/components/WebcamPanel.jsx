@@ -112,11 +112,9 @@ export default function WebcamPanel({
   canvas.width = video.videoWidth || 640
   canvas.height = video.videoHeight || 480
 
-  // FIX: mirror the canvas to match what user sees
-  ctx.translate(canvas.width, 0)
-  ctx.scale(-1, 1)
+  // Keep the preview mirrored in CSS, but send the original camera pixels to
+  // the model. This matches the orientation of normal training images.
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-  ctx.setTransform(1, 0, 0, 1, 0, 0) // reset transform
 
   sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, mode)
 }

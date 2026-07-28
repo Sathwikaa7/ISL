@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import Header from './components/Header'
 import WebcamPanel from './components/WebcamPanel'
 import ModeToggle from './components/ModeToggle'
@@ -10,13 +10,10 @@ import TranscriptHistory from './components/TranscriptHistory'
 import { translateSentence } from './services/api'
 import { createSessionId } from './services/utils'
 
-const STABLE_HOLD_MS = 700
-
 export default function App() {
   const [sessionId] = useState(createSessionId)
 
-  // Changed default mode
-  const [mode, setMode] = useState('phrase')
+  const [mode, setMode] = useState('alphabet')
 
   const [connectionStatus, setConnectionStatus] = useState('connecting')
 
@@ -29,39 +26,12 @@ export default function App() {
   const [isTranslating, setIsTranslating] = useState(false)
   const [transcript, setTranscript] = useState([])
 
-  const lastLetterRef = useRef(null)
-  const holdSinceRef = useRef(0)
-
   function handlePrediction({ label, confidence }) {
-
-    if (mode !== "alphabet") return;
-
-    if (!label) return;
-
-    if (confidence < 85) return;
-
-    const now = Date.now();
-
-    if (label !== lastLetterRef.current) {
-        lastLetterRef.current = label;
-        holdSinceRef.current = now;
-        return;
-    }
-
-    if (now - holdSinceRef.current < STABLE_HOLD_MS) {
-        return;
-    }
-
-    setLetterBuffer(prev => {
-
-        if (prev.endsWith(label))
-            return prev;
-
-        return prev + label;
-    });
-
-    holdSinceRef.current = now + 1000;
-}
+    // One click creates one server prediction.  Do not wait for a second
+    // frame: alphabet capture is intentionally a single-frame interaction.
+    if (mode !== 'alphabet' || !label) return
+    setLetterBuffer((previous) => previous + label.toUpperCase())
+  }
   
 
   function handleBackspace() {

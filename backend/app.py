@@ -135,13 +135,6 @@ def handle_frame(data):
             state.current_prediction = label
             state.current_confidence = round(confidence, 2)
 
-            # FIX 3: only add to sentence if confidence is high enough
-            if confidence >= 75.0:
-                state.sentence.add_word(label)
-                emit("sentence", {
-                    "sentence": state.sentence.get_sentence()
-                })
-
             emit("prediction", {
                 "label": label,
                 "confidence": round(confidence, 2),

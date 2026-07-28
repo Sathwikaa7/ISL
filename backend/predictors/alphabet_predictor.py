@@ -41,8 +41,6 @@ hands = mp_hands.Hands(
 # Predictor
 # ======================================
 
-CONFIDENCE_THRESHOLD = 75.0
-
 def predict(image):
 
     frame = np.array(image)
@@ -68,7 +66,10 @@ def predict(image):
     ymin = int(min(ys) * h)
     ymax = int(max(ys) * h)
 
-    padding = 35
+    # Training images contain the hand with substantial surrounding context;
+    # a tight live crop made the hand 2-3x larger than during training.
+    # Use proportional padding to keep the live hand scale comparable.
+    padding = max(35, int(max(xmax - xmin, ymax - ymin) * 0.75))
     xmin -= padding
     xmax += padding
     ymin -= padding
@@ -96,8 +97,11 @@ def predict(image):
     # ------------------------------------
 
     crop = Image.fromarray(crop).resize((224, 224))
+
+    # The saved model already contains MobileNetV3 preprocessing.  Passing
+    # normalised pixels here normalises them a second time and gives the model
+    # inputs unlike the raw RGB 0-255 images used during training.
     crop = np.array(crop, dtype=np.float32)
-    crop = tf.keras.applications.mobilenet_v3.preprocess_input(crop)
     crop = np.expand_dims(crop, axis=0)
 
     # ------------------------------------
@@ -109,9 +113,6 @@ def predict(image):
     idx = np.argmax(prediction)
     confidence = float(prediction[idx]) * 100
 
-    # FIX 4: return None if confidence below threshold
-    if confidence < CONFIDENCE_THRESHOLD:
-        return None, confidence
     print(f"[DEBUG] Top 3 predictions:")
     top3 = np.argsort(prediction)[-3:][::-1]
     for i in top3:

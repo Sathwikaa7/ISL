@@ -1,6 +1,6 @@
 const MODES = [
   { id: 'alphabet', label: 'Alphabet', hint: 'Spell letter by letter — best for names & new words' },
-  { id: 'phrase', label: 'Word / Phrase', hint: 'One sign per word — faster for everyday conversation' }
+  { id: 'word', label: 'Word / Phrase', hint: 'One sign per word — sequence model integration in progress' }
 ]
 
 export default function ModeToggle({ mode, setMode }) {

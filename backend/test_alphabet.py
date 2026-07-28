@@ -71,8 +71,6 @@ plt.show()
 
 image = rgb.astype(np.float32)
 
-image = tf.keras.applications.mobilenet_v3.preprocess_input(image)
-
 image = np.expand_dims(image, axis=0)
 
 prediction = model.predict(image, verbose=0)[0]
