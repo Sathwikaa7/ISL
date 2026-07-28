@@ -33,8 +33,8 @@ mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(
     static_image_mode=True,
     max_num_hands=2,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
 )
 
 # ======================================
@@ -50,6 +50,7 @@ def predict(image):
     results = hands.process(frame)
 
     if not results.multi_hand_landmarks:
+        print("[ALPHABET] No hand detected in captured frame")
         return None, 0
 
     hand = results.multi_hand_landmarks[0]

@@ -57,9 +57,9 @@ export default function WebcamPanel({
     socket.on('connect_error', () => setConnectionStatus('error'))
 
     socket.on('prediction', (payload) => {
-      const { label, confidence: conf, fps: serverFps } = payload || {}
+      const { label, confidence: conf, fps: serverFps, status } = payload || {}
       if (label === undefined) return
-      setCurrentLetter(label)
+      setCurrentLetter(label || status || '—')
       setConfidence(conf ?? 0)
       if (serverFps) setFps(serverFps)
       onPrediction?.({ label, confidence: conf ?? 0 })

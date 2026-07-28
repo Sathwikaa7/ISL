@@ -126,7 +126,8 @@ def handle_frame(data):
                 emit("prediction", {
                     "label": "",
                     "confidence": round(confidence, 2),
-                    "fps": fps
+                    "fps": fps,
+                    "status": "No hand detected — centre one hand and capture again"
                 })
                 return
 
