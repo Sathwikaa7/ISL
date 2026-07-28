@@ -1,7 +1,8 @@
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from backend.utils.translator import Translator
+from backend.utils.speaker import Speaker
 from backend.predictors.alphabet_predictor import predict
 from backend.utils.rapidfuzz_utils import load_words, make_suggester
 
@@ -15,11 +16,13 @@ import base64
 import io
 import os
 import time
+from uuid import uuid4
 
 from backend import state
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DICTIONARY_PATH = os.path.join(os.path.dirname(BASE_DIR), "data", "english_words.txt")
+AUDIO_DIRECTORY = os.path.join(BASE_DIR, "generated_audio")
 
 # -----------------------------------
 # Flask App
@@ -43,6 +46,7 @@ word_model = tf.keras.models.load_model(WORD_MODEL_PATH)
 print("Models loaded successfully!")
 
 translator = Translator()
+speaker = Speaker()
 word_suggestions = make_suggester(load_words(DICTIONARY_PATH))
 
 # -----------------------------------
@@ -90,6 +94,47 @@ def suggest_words():
         return jsonify({"suggestions": []})
 
     return jsonify({"suggestions": word_suggestions(letter_sequence)})
+
+
+@app.route("/api/translate", methods=["POST"])
+def translate_text():
+    """Keep the completed sentence in English and provide its Telugu translation."""
+    payload = request.get_json(silent=True) or {}
+    english = str(payload.get("text", "")).strip()
+    if not english:
+        return jsonify({"error": "Text is required."}), 400
+
+    return jsonify({
+        "english": english,
+        "telugu": translator.translate(english)
+    })
+
+
+@app.route("/api/speak", methods=["POST"])
+def synthesize_speech():
+    """Generate an MP3 and return a same-origin URL that Vite can proxy."""
+    payload = request.get_json(silent=True) or {}
+    text = str(payload.get("text", "")).strip()
+    language = str(payload.get("lang", "en")).lower()
+
+    if not text:
+        return jsonify({"error": "Text is required."}), 400
+    if language not in Speaker.SUPPORTED_LANGUAGES:
+        return jsonify({"error": "Language must be 'en' or 'te'."}), 400
+
+    filename = f"{uuid4().hex}.mp3"
+    try:
+        speaker.synthesize(text, language, os.path.join(AUDIO_DIRECTORY, filename))
+    except Exception as error:
+        print(f"Speech synthesis error: {error}")
+        return jsonify({"error": "Could not generate speech audio."}), 502
+
+    return jsonify({"audio_url": f"/api/audio/{filename}"})
+
+
+@app.route("/api/audio/<path:filename>")
+def serve_audio(filename):
+    return send_from_directory(AUDIO_DIRECTORY, filename, mimetype="audio/mpeg")
 
 # -----------------------------------
 # Socket Events
@@ -139,8 +184,7 @@ def handle_frame(data):
                 emit("prediction", {
                     "label": "",
                     "confidence": round(confidence, 2),
-                    "fps": fps,
-                    "status": "No hand detected — centre one hand and capture again"
+                    "fps": fps
                 })
                 return
 

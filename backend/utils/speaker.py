@@ -1,51 +1,25 @@
+from pathlib import Path
+
 from gtts import gTTS
-from playsound import playsound
-import os
 
 
 class Speaker:
+    """Create MP3 files for the browser to play.
 
-    def speak(self, text):
+    Playing audio on the Flask machine with ``playsound`` does not play it for
+    the person using the web app.  The API saves a file instead and returns its
+    URL to the browser.
+    """
 
-        if text.strip() == "":
-            return
+    SUPPORTED_LANGUAGES = {"en", "te"}
 
-        filename = "voice.mp3"
+    def synthesize(self, text, language, output_path):
+        if not text or not text.strip():
+            raise ValueError("Text is required for speech synthesis.")
+        if language not in self.SUPPORTED_LANGUAGES:
+            raise ValueError("Language must be 'en' or 'te'.")
 
-        # Generate speech
-        tts = gTTS(
-            text=text,
-            lang="en"
-        )
-
-        tts.save(filename)
-
-        # Play speech
-        playsound(filename)
-
-        # Delete temporary file
-        if os.path.exists(filename):
-            os.remove(filename)
-
-
-# ==========================
-# Test Speaker
-# ==========================
-
-if __name__ == "__main__":
-
-    speaker = Speaker()
-
-    print("===== Text To Speech Test =====")
-    print("Type 'q' to quit.\n")
-
-    while True:
-
-        text = input("Enter text: ")
-
-        if text.lower() == "q":
-            break
-
-        speaker.speak(text)
-
-    print("\nSpeaker Closed.")
+        destination = Path(output_path)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        gTTS(text=text.strip(), lang=language).save(str(destination))
+        return destination
