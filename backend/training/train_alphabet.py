@@ -3,9 +3,9 @@ import json
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
-# ==========================
+# ==========================================
 # Configuration
-# ==========================
+# ==========================================
 
 DATASET_PATH = r"D:\SLD\dataset\alphabet"
 
@@ -14,11 +14,12 @@ os.makedirs(MODEL_DIR, exist_ok=True)
 
 IMAGE_SIZE = (224, 224)
 BATCH_SIZE = 16
-EPOCHS = 20
+STAGE1_EPOCHS = 5
+STAGE2_EPOCHS = 50
 
-# ==========================
+# ==========================================
 # Load Dataset
-# ==========================
+# ==========================================
 
 train_ds = tf.keras.utils.image_dataset_from_directory(
     DATASET_PATH,
@@ -46,8 +47,6 @@ print(class_names)
 
 print("\nTotal Classes:", num_classes)
 
-# Save class names for backend inference
-
 with open(os.path.join(MODEL_DIR, "alphabet_classes.json"), "w") as f:
     json.dump(class_names, f)
 
@@ -56,31 +55,38 @@ AUTOTUNE = tf.data.AUTOTUNE
 train_ds = train_ds.shuffle(1000).prefetch(AUTOTUNE)
 val_ds = val_ds.prefetch(AUTOTUNE)
 
-# ==========================
+# ==========================================
 # Data Augmentation
-# ==========================
+# ==========================================
 
 data_augmentation = tf.keras.Sequential([
-    tf.keras.layers.RandomFlip("horizontal"),
-    tf.keras.layers.RandomRotation(0.1),
-    tf.keras.layers.RandomZoom(0.1),
+
+    tf.keras.layers.RandomRotation(0.15),
+    tf.keras.layers.RandomZoom(0.15),
+    tf.keras.layers.RandomTranslation(0.08,0.08),
+    tf.keras.layers.RandomContrast(0.2),
+    tf.keras.layers.RandomBrightness(0.2),
+tf.keras.layers.RandomFlip("horizontal"),
+
 ])
 
-# ==========================
+# ==========================================
 # MobileNetV3
-# ==========================
+# ==========================================
 
 base_model = tf.keras.applications.MobileNetV3Small(
+
     input_shape=(224,224,3),
     include_top=False,
     weights="imagenet"
+
 )
 
 base_model.trainable = False
 
-# ==========================
+# ==========================================
 # Build Model
-# ==========================
+# ==========================================
 
 inputs = tf.keras.Input(shape=(224,224,3))
 
@@ -101,92 +107,164 @@ outputs = tf.keras.layers.Dense(
 
 model = tf.keras.Model(inputs, outputs)
 
-# ==========================
-# Compile
-# ==========================
-
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(1e-3),
-    loss="sparse_categorical_crossentropy",
-    metrics=["accuracy"]
-)
-
-model.summary()
-
-# ==========================
+# ==========================================
 # Callbacks
-# ==========================
+# ==========================================
 
 callbacks = [
 
     tf.keras.callbacks.EarlyStopping(
-        monitor="val_loss",
+        monitor="val_accuracy",
         patience=5,
-        restore_best_weights=True
+        restore_best_weights=True,
+        mode="max"
     ),
 
     tf.keras.callbacks.ReduceLROnPlateau(
-        monitor="val_loss",
+        monitor="val_accuracy",
         factor=0.2,
-        patience=2
+        patience=2,
+        verbose=1,
+        mode="max"
     ),
 
     tf.keras.callbacks.ModelCheckpoint(
         filepath=os.path.join(MODEL_DIR, "isl_model.keras"),
-        save_best_only=True
+        monitor="val_accuracy",
+        save_best_only=True,
+        mode="max",
+        verbose=1
     )
 
 ]
 
-# ==========================
-# Train
-# ==========================
-print("\nTraining dataset ready")
-print("Validation dataset ready")
-print("Starting training...\n")
+# ==========================================
+# Stage 1
+# ==========================================
 
-history = model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS,
-    callbacks=callbacks,
-    verbose=2
+print("\n==========================")
+print("Stage 1 Training")
+print("==========================\n")
+
+model.compile(
+
+    optimizer=tf.keras.optimizers.Adam(1e-3),
+
+    loss="sparse_categorical_crossentropy",
+
+    metrics=["accuracy"]
+
 )
-print("\nmodel.fit finished successfully\n")
 
-# ==========================
+history1 = model.fit(
+
+    train_ds,
+
+    validation_data=val_ds,
+
+    epochs=STAGE1_EPOCHS,
+
+    callbacks=callbacks,
+
+    verbose=2
+
+)
+
+# ==========================================
+# Stage 2 Fine Tuning
+# ==========================================
+
+print("\n==========================")
+print("Stage 2 Fine Tuning")
+print("==========================\n")
+
+base_model.trainable = True
+
+for layer in base_model.layers[:-40]:
+    layer.trainable = False
+
+model.compile(
+
+    optimizer=tf.keras.optimizers.Adam(1e-5),
+
+    loss="sparse_categorical_crossentropy",
+
+    metrics=["accuracy"]
+
+)
+
+history2 = model.fit(
+
+    train_ds,
+
+    validation_data=val_ds,
+
+    epochs=STAGE2_EPOCHS,
+
+    callbacks=callbacks,
+
+    verbose=2
+
+)
+
+# ==========================================
 # Save Final Model
-# ==========================
+# ==========================================
 
-model.save(os.path.join(MODEL_DIR, "isl_model.keras"))
+model.save(os.path.join(MODEL_DIR,"isl_model.keras"))
 
-print("\nTraining completed successfully!")
+print("\nTraining Completed Successfully!")
 
-# ==========================
+# ==========================================
+# Merge History
+# ==========================================
+
+accuracy = history1.history["accuracy"] + history2.history["accuracy"]
+val_accuracy = history1.history["val_accuracy"] + history2.history["val_accuracy"]
+
+loss = history1.history["loss"] + history2.history["loss"]
+val_loss = history1.history["val_loss"] + history2.history["val_loss"]
+
+# ==========================================
 # Accuracy Plot
-# ==========================
+# ==========================================
 
 plt.figure(figsize=(8,5))
-plt.plot(history.history["accuracy"])
-plt.plot(history.history["val_accuracy"])
+
+plt.plot(accuracy)
+
+plt.plot(val_accuracy)
+
 plt.title("Training Accuracy")
+
 plt.xlabel("Epoch")
+
 plt.ylabel("Accuracy")
+
 plt.legend(["Train","Validation"])
+
 plt.grid(True)
+
 plt.show()
 
-# ==========================
+# ==========================================
 # Loss Plot
-# ==========================
+# ==========================================
 
 plt.figure(figsize=(8,5))
-plt.plot(history.history["loss"])
-plt.plot(history.history["val_loss"])
+
+plt.plot(loss)
+
+plt.plot(val_loss)
+
 plt.title("Training Loss")
+
 plt.xlabel("Epoch")
+
 plt.ylabel("Loss")
+
 plt.legend(["Train","Validation"])
 
 plt.grid(True)
+
 plt.show()

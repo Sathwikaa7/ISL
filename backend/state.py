@@ -1,5 +1,4 @@
-from sentence_builder import SentenceBuilder
-
+from backend.sentence_builder import SentenceBuilder
 sentence = SentenceBuilder()
 
 current_prediction = ""

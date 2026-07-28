@@ -2,9 +2,12 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 from backend.utils.translator import Translator
+from backend.predictors.alphabet_predictor import predict
 
 import tensorflow as tf
 import numpy as np
+import cv2
+
 from PIL import Image
 
 import base64
@@ -12,7 +15,9 @@ import io
 import os
 import time
 
-import state
+from backend import state
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # -----------------------------------
 # Flask App
@@ -27,29 +32,15 @@ socketio = SocketIO(
 )
 
 # -----------------------------------
-# Load AI Model
+# Load Word Model
 # -----------------------------------
 
-print("Loading Alphabet Model...")
-alphabet_model = tf.keras.models.load_model(
-    os.path.join("models", "isl_model.keras")
-)
-
 print("Loading Word Model...")
-word_model = tf.keras.models.load_model(
-    os.path.join("models", "isl_word_model.keras")
-)
-
-print("Both models loaded successfully!")
+WORD_MODEL_PATH = os.path.join(BASE_DIR, "models", "isl_word_model.keras")
+word_model = tf.keras.models.load_model(WORD_MODEL_PATH)
+print("Models loaded successfully!")
 
 translator = Translator()
-
-ALPHABET_CLASSES = [
-    '1','2','3','4','5','6','7','8','9',
-    'A','B','C','D','E','F','G','H','I',
-    'J','K','L','M','N','O','P','Q','R',
-    'S','T','U','V','W','X','Y','Z'
-]
 
 # -----------------------------------
 # Class Names
@@ -68,8 +59,11 @@ CLASS_NAMES = [
     'wet','wide','year','yesterday','young'
 ]
 
+# FIX: confidence threshold for word mode
+WORD_CONFIDENCE_THRESHOLD = 75.0
+
 # -----------------------------------
-# Home
+# Routes
 # -----------------------------------
 
 @app.route("/")
@@ -82,9 +76,7 @@ def home():
 
 @app.route("/api/health")
 def health():
-    return jsonify({
-        "status": "ok"
-    })
+    return jsonify({"status": "ok"})
 
 # -----------------------------------
 # Socket Events
@@ -106,79 +98,89 @@ def disconnected():
 @socketio.on("frame")
 def handle_frame(data):
 
+    # FIX 1: removed print("RAW DATA:", data) — was spamming terminal
+
     start = time.time()
-    mode = data.get("mode", "phrase")
+    mode = data.get("mode", "alphabet")
 
     try:
 
-        image_data = data["image"]
-
-        image_data = image_data.split(",")[1]
-
+        image_data = data["image"].split(",")[1]
         image = Image.open(
             io.BytesIO(base64.b64decode(image_data))
         ).convert("RGB")
 
+        frame = np.array(image)
+
         # -------------------------
-        # Alphabet Model
+        # Alphabet Mode
         # -------------------------
         if mode == "alphabet":
 
-            image = image.resize((128, 128))
+            label, confidence = predict(image)
 
-            image = np.array(image, dtype=np.float32)
+            fps = round(1 / (time.time() - start), 2)
 
-            # CNN model expects values between 0 and 1
-            image = image / 255.0
+            # FIX 2: only emit if hand detected
+            if label is None:
+                emit("prediction", {
+                    "label": "",
+                    "confidence": round(confidence, 2),
+                    "fps": fps
+                })
+                return
 
-            image = np.expand_dims(image, axis=0)
+            print(f"[ALPHABET] {label} ({round(confidence, 2)}%)")
 
-            prediction = alphabet_model.predict(image, verbose=0)
+            state.current_prediction = label
+            state.current_confidence = round(confidence, 2)
 
-            classes = ALPHABET_CLASSES
+            # FIX 3: only add to sentence if confidence is high enough
+            if confidence >= 75.0:
+                state.sentence.add_word(label)
+                emit("sentence", {
+                    "sentence": state.sentence.get_sentence()
+                })
+
+            emit("prediction", {
+                "label": label,
+                "confidence": round(confidence, 2),
+                "fps": fps
+            })
+
+            return
 
         # -------------------------
-        # Word Model
+        # Word Mode
+        # NOTE: word model needs sequence of frames (LSTM)
+        # This single-frame approach is temporary for demo
         # -------------------------
-        else:
+        image_resized = image.resize((224, 224))
+        image_array = np.array(image_resized, dtype=np.float32)
+        image_array = tf.keras.applications.mobilenet_v3.preprocess_input(image_array)
+        image_array = np.expand_dims(image_array, axis=0)
 
-            image = image.resize((128, 128))
-
-            image = np.array(image, dtype=np.float32)
-
-            image = tf.keras.applications.mobilenet_v3.preprocess_input(image)
-
-            image = np.expand_dims(image, axis=0)
-
-            prediction = word_model.predict(image, verbose=0)
-
-            classes = CLASS_NAMES
+        prediction = word_model.predict(image_array, verbose=0)
 
         idx = np.argmax(prediction)
-
         confidence = float(prediction[0][idx]) * 100
-
-        print("===================================")
-        print("MODE:", mode)
-        print("CLASS:", classes[idx])
-        print("CONFIDENCE:", round(confidence, 2))
-        print("===================================")
 
         fps = round(1 / (time.time() - start), 2)
 
-        # Save current prediction
-        state.current_prediction = classes[idx]
+        print(f"[WORD] {CLASS_NAMES[idx]} ({round(confidence, 2)}%)")
+
+        state.current_prediction = CLASS_NAMES[idx]
         state.current_confidence = round(confidence, 2)
 
         emit("prediction", {
-            "label": classes[idx],
+            "label": CLASS_NAMES[idx],
             "confidence": round(confidence, 2),
             "fps": fps
         })
 
     except Exception as e:
 
-        print(e)
+        print(f"[ERROR] {e}")
 
         emit("prediction", {
             "label": "Error",
@@ -188,21 +190,15 @@ def handle_frame(data):
         })
 
 # -----------------------------------
-# Add Current Prediction to Sentence
+# Add Word to Sentence
 # -----------------------------------
 
 @socketio.on("add_word")
 def add_word():
-
     state.sentence.add_word(state.current_prediction)
-
-    emit(
-        "sentence",
-        {
-            "sentence": state.sentence.get_sentence()
-        },
-        broadcast=True
-    )
+    emit("sentence", {
+        "sentence": state.sentence.get_sentence()
+    }, broadcast=True)
 
 # -----------------------------------
 # Backspace
@@ -210,16 +206,10 @@ def add_word():
 
 @socketio.on("backspace")
 def backspace():
-
     state.sentence.backspace()
-
-    emit(
-        "sentence",
-        {
-            "sentence": state.sentence.get_sentence()
-        },
-        broadcast=True
-    )
+    emit("sentence", {
+        "sentence": state.sentence.get_sentence()
+    }, broadcast=True)
 
 # -----------------------------------
 # Clear Sentence
@@ -227,62 +217,41 @@ def backspace():
 
 @socketio.on("clear_sentence")
 def clear_sentence():
-
     state.sentence.clear()
-
-    emit(
-        "sentence",
-        {
-            "sentence": ""
-        },
-        broadcast=True
-    )
+    emit("sentence", {"sentence": ""}, broadcast=True)
 
 # -----------------------------------
-# Get Current Sentence
+# Get Sentence
 # -----------------------------------
 
 @socketio.on("get_sentence")
 def get_sentence():
-
-    emit(
-        "sentence",
-        {
-            "sentence": state.sentence.get_sentence()
-        }
-    )
+    emit("sentence", {
+        "sentence": state.sentence.get_sentence()
+    })
 
 # -----------------------------------
-# Translate Sentence
+# Translate
 # -----------------------------------
 
 @socketio.on("translate")
 def translate_sentence():
-
     sentence = state.sentence.get_sentence()
-
     translated = translator.translate(sentence)
-
     state.translated_text = translated
-
-    emit(
-        "translated",
-        {
-            "english": sentence,
-            "telugu": translated
-        },
-        broadcast=True
-    )
+    emit("translated", {
+        "english": sentence,
+        "telugu": translated
+    }, broadcast=True)
 
 # -----------------------------------
-# Run Server
+# Run
 # -----------------------------------
 
 if __name__ == "__main__":
-
     socketio.run(
         app,
         host="0.0.0.0",
         port=5000,
-        debug=True
+        debug=False  # FIX 4: debug=False stops auto-reloader spam
     )

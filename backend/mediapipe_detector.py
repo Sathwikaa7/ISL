@@ -3,11 +3,12 @@ import mediapipe as mp
 
 mp_hands = mp.solutions.hands
 
+# FIX: static_image_mode=True for single frame capture
 hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=1,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
+    static_image_mode=True,
+    max_num_hands=2,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.7
 )
 
 
@@ -29,7 +30,6 @@ def extract_hand(frame):
 
     xmin = max(int(min(xs) * w) - 20, 0)
     xmax = min(int(max(xs) * w) + 20, w)
-
     ymin = max(int(min(ys) * h) - 20, 0)
     ymax = min(int(max(ys) * h) + 20, h)
 

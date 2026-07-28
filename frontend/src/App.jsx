@@ -34,16 +34,35 @@ export default function App() {
 
   function handlePrediction({ label, confidence }) {
 
-    console.log("Current mode =", mode)
+    if (mode !== "alphabet") return;
 
-    if (mode !== "alphabet") return
+    if (!label) return;
 
-    if (confidence < 60) return
+    if (confidence < 85) return;
 
-    console.log("Adding", label)
+    const now = Date.now();
 
-    setLetterBuffer(prev => prev + label)
-  }
+    if (label !== lastLetterRef.current) {
+        lastLetterRef.current = label;
+        holdSinceRef.current = now;
+        return;
+    }
+
+    if (now - holdSinceRef.current < STABLE_HOLD_MS) {
+        return;
+    }
+
+    setLetterBuffer(prev => {
+
+        if (prev.endsWith(label))
+            return prev;
+
+        return prev + label;
+    });
+
+    holdSinceRef.current = now + 1000;
+}
+  
 
   function handleBackspace() {
     setLetterBuffer((prev) => prev.slice(0, -1))

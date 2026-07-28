@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { connectSocket, disconnectSocket, getSocket, sendFrame } from '../services/socket'
 
-const FRAME_INTERVAL_MS = 130 // ~7-8 fps upload; backend still infers at 24+ fps on its buffer
-
 export default function WebcamPanel({
   sessionId,
   mode,
@@ -15,13 +13,14 @@ export default function WebcamPanel({
   const canvasRef = useRef(null)
   const streamRef = useRef(null)
   const intervalRef = useRef(null)
+  const countdownRef = useRef(null)
   const modeRef = useRef(mode)
   const [cameraError, setCameraError] = useState(null)
   const [currentLetter, setCurrentLetter] = useState(null)
   const [confidence, setConfidence] = useState(0)
   const [fps, setFps] = useState(0)
+  const [countdown, setCountdown] = useState(null)
 
-  // Keep modeRef in sync so the frame loop never reads a stale mode
   useEffect(() => {
     modeRef.current = mode
   }, [mode])
@@ -76,8 +75,9 @@ export default function WebcamPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Frame streaming loop
+  // Streaming loop (word mode only)
   useEffect(() => {
+    if (mode !== "word") return
     if (isFrozen) {
       clearInterval(intervalRef.current)
       return
@@ -86,19 +86,57 @@ export default function WebcamPanel({
       const video = videoRef.current
       const canvas = canvasRef.current
       if (!video || !canvas || video.readyState < 2) return
-
-      const ctx = canvas.getContext('2d')
-      canvas.width = video.videoWidth || 640
-      canvas.height = video.videoHeight || 480
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.6)
-      console.log("Sending mode:", mode)
-      sendFrame(dataUrl, sessionId, mode)
-    }, FRAME_INTERVAL_MS)
-
+      const ctx = canvas.getContext("2d")
+      canvas.width = video.videoWidth
+      canvas.height = video.videoHeight
+      ctx.drawImage(video, 0, 0)
+      sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, "word")
+    }, 130)
     return () => clearInterval(intervalRef.current)
-  }, [isFrozen, sessionId])
+  }, [mode, isFrozen, sessionId])
+
+  // Cleanup countdown on unmount
+  useEffect(() => {
+    return () => {
+      if (countdownRef.current) clearInterval(countdownRef.current)
+    }
+  }, [])
+
+  // Frame capture
+  function captureFrame() {
+  const video = videoRef.current
+  const canvas = canvasRef.current
+  if (!video || !canvas) return
+
+  const ctx = canvas.getContext("2d")
+  canvas.width = video.videoWidth || 640
+  canvas.height = video.videoHeight || 480
+
+  // FIX: mirror the canvas to match what user sees
+  ctx.translate(canvas.width, 0)
+  ctx.scale(-1, 1)
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+  ctx.setTransform(1, 0, 0, 1, 0, 0) // reset transform
+
+  sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, mode)
+}
+
+  // Countdown then capture
+  function startCountdown() {
+    if (countdown !== null) return
+    let count = 3
+    setCountdown(count)
+    countdownRef.current = setInterval(() => {
+      count -= 1
+      if (count === 0) {
+        clearInterval(countdownRef.current)
+        setCountdown(null)
+        captureFrame()
+      } else {
+        setCountdown(count)
+      }
+    }, 1000)
+  }
 
   return (
     <div className="panel p-4 sm:p-5 flex flex-col gap-4">
@@ -127,13 +165,22 @@ export default function WebcamPanel({
         <canvas ref={canvasRef} className="hidden" />
 
         {/* Recording indicator */}
-        {!isFrozen && !cameraError && (
+        {!isFrozen && !cameraError && countdown === null && (
           <div className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-ink-950/70 px-3 py-1 backdrop-blur-sm">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full rounded-full bg-coral opacity-75 animate-ping" />
               <span className="relative inline-flex h-2 w-2 rounded-full bg-coral" />
             </span>
             <span className="font-mono text-[11px] tracking-wide text-slate-300">LIVE</span>
+          </div>
+        )}
+
+        {/* Countdown overlay */}
+        {countdown !== null && (
+          <div className="absolute inset-0 flex items-center justify-center bg-ink-950/60">
+            <span className="font-display text-8xl font-bold text-white animate-pulse">
+              {countdown}
+            </span>
           </div>
         )}
 
@@ -148,7 +195,7 @@ export default function WebcamPanel({
           {fps ? `${fps.toFixed(0)} fps` : '-- fps'}
         </div>
 
-        {/* Big letter overlay, the "signature" reveal moment */}
+        {/* Big letter overlay */}
         <div className="absolute bottom-0 left-0 right-0 flex items-end justify-between gap-4 bg-gradient-to-t from-ink-950/90 to-transparent p-4">
           <div className="flex items-end gap-3">
             <span
@@ -162,6 +209,23 @@ export default function WebcamPanel({
           <ConfidenceMeter value={confidence} />
         </div>
       </div>
+
+      {mode === "alphabet" && (
+        <button
+          onClick={startCountdown}
+          disabled={countdown !== null}
+          className={`mt-4 rounded-lg px-6 py-3 text-white font-semibold transition-colors
+            ${countdown !== null
+              ? 'bg-slate-600 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-700'
+            }`}
+        >
+          {countdown !== null
+            ? `Capturing in ${countdown}...`
+            : 'Capture Letter (3s)'
+          }
+        </button>
+      )}
     </div>
   )
 }
