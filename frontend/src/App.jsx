@@ -33,6 +33,7 @@ export default function App() {
     // frame: alphabet capture is intentionally a single-frame interaction.
     if (!label) return
     if (mode === 'alphabet') {
+      if (!/^[A-Za-z0-9]$/.test(label)) return
       setLetterBuffer((previous) => previous + label.toUpperCase())
       return
     }

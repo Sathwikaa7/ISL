@@ -16,10 +16,10 @@ from backend.training.train_word_stgcn import GraphConvolution, STGCNBlock
 
 
 class WordPredictor:
-    CONFIDENCE_THRESHOLD = 0.85
-    REQUIRED_VOTES = 4
-    VOTE_WINDOW = 5
-    PREDICT_EVERY = 4
+    CONFIDENCE_THRESHOLD = 0.65
+    REQUIRED_VOTES = 2
+    VOTE_WINDOW = 3
+    PREDICT_EVERY = 1
     COOLDOWN_SECONDS = 1.5
 
     def __init__(self, models_dir: str):
