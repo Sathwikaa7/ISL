@@ -1,6 +1,5 @@
-import os
 import json
-import string
+from pathlib import Path
 import tensorflow as tf
 import matplotlib.pyplot as plt
 
@@ -8,27 +7,31 @@ import matplotlib.pyplot as plt
 # Configuration
 # ==========================================
 
-DATASET_PATH = r"D:\SLD\dataset\alphabet"
-
-MODEL_DIR = os.path.join("..", "models")
-os.makedirs(MODEL_DIR, exist_ok=True)
+PROJECT_DIR = Path(__file__).resolve().parents[2]
+DATASET_PATH = PROJECT_DIR / "dataset" / "alphabet"
+MODEL_DIR = PROJECT_DIR / "backend" / "models"
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
 IMAGE_SIZE = (224, 224)
 BATCH_SIZE = 32
 STAGE1_EPOCHS = 5
 STAGE2_EPOCHS = 15
 
-# The downloaded archive also contains a non-letter folder named "{".  Keep
-# the alphabet recognizer deliberately restricted to A-Z so its model outputs
-# always match alphabet_classes.json and the website's letter buffer.
-CLASS_NAMES = list(string.ascii_lowercase)
+# Use the folder names exactly as they appear on disk.  This dataset has
+# 0-9 and A-Z, so the class map is: 0-9, A-Z (36 outputs in total).
+# Passing this explicit, sorted list makes the mapping stable and writes the
+# same order to alphabet_classes.json for inference.
+CLASS_NAMES = sorted(path.name for path in DATASET_PATH.iterdir() if path.is_dir())
+
+if not CLASS_NAMES:
+    raise RuntimeError(f"No class folders found in: {DATASET_PATH}")
 
 # ==========================================
 # Load Dataset
 # ==========================================
 
 train_ds = tf.keras.utils.image_dataset_from_directory(
-    DATASET_PATH,
+    str(DATASET_PATH),
     validation_split=0.2,
     subset="training",
     seed=42,
@@ -38,7 +41,7 @@ train_ds = tf.keras.utils.image_dataset_from_directory(
 )
 
 val_ds = tf.keras.utils.image_dataset_from_directory(
-    DATASET_PATH,
+    str(DATASET_PATH),
     validation_split=0.2,
     subset="validation",
     seed=42,
@@ -54,9 +57,6 @@ print("\nClasses:")
 print(class_names)
 
 print("\nTotal Classes:", num_classes)
-
-with open(os.path.join(MODEL_DIR, "alphabet_classes.json"), "w") as f:
-    json.dump(class_names, f)
 
 AUTOTUNE = tf.data.AUTOTUNE
 
@@ -136,7 +136,7 @@ callbacks = [
     ),
 
     tf.keras.callbacks.ModelCheckpoint(
-        filepath=os.path.join(MODEL_DIR, "isl_model.keras"),
+        filepath=str(MODEL_DIR / "isl_model.keras"),
         monitor="val_accuracy",
         save_best_only=True,
         mode="max",
@@ -218,7 +218,12 @@ history2 = model.fit(
 # Save Final Model
 # ==========================================
 
-model.save(os.path.join(MODEL_DIR,"isl_model.keras"))
+model.save(MODEL_DIR / "isl_model.keras")
+
+# Update the inference label map only after the new model is fully saved.
+# Until then, the existing model and its existing 26-class map remain paired.
+with open(MODEL_DIR / "alphabet_classes.json", "w") as f:
+    json.dump(class_names, f)
 
 print("\nTraining Completed Successfully!")
 
