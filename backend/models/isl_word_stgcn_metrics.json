@@ -1,0 +1,22 @@
+{
+  "test_loss": 0.025947850197553635,
+  "test_accuracy": 0.9841269850730896,
+  "test_top_3_accuracy": 1.0,
+  "classes": [
+    "busy",
+    "come",
+    "cry",
+    "give",
+    "good_afternoon",
+    "good_morning",
+    "hello",
+    "interview",
+    "what_is_your_name",
+    "wrong"
+  ],
+  "split_sizes": {
+    "train": 384,
+    "validation": 126,
+    "test": 126
+  }
+}

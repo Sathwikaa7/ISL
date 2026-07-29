@@ -1,21 +1,21 @@
-# Datasets
-dataset/
-
-# Python virtual environments
-venv/
-venv_train/
-venv_preprocess/
-
-# Node
-node_modules/
-
-# Python cache
+# Python
 __pycache__/
 *.pyc
 
-# Build folders
-dist/
-build/
+# Virtual environments
+venv/
+venv_preprocess/
+venv_train/
+venv_preprocess_old/
+.venv/
 
-# VS Code
-.vscode/
+# Models (optional)
+*.keras
+*.h5
+
+# Dataset
+dataset/
+
+# Debug files
+debug_*.jpg
+uploads/

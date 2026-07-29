@@ -77,7 +77,8 @@ def predict(image):
     # Training images contain the hand with substantial surrounding context;
     # a tight live crop made the hand 2-3x larger than during training.
     # Use proportional padding to keep the live hand scale comparable.
-    padding = max(35, int(max(xmax - xmin, ymax - ymin) * 0.75))
+    # Replace the current padding line
+    padding = max(12, int(max(xmax - xmin, ymax - ymin) * 0.20))
     xmin -= padding
     xmax += padding
     ymin -= padding
@@ -96,6 +97,7 @@ def predict(image):
     ymax = min(h, ymin + size)
 
     crop = frame[ymin:ymax, xmin:xmax]
+    Image.fromarray(crop).resize((224, 224)).save("debug_crop.jpg")
 
     if crop.size == 0:
         return None, 0

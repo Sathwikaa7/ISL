@@ -5,10 +5,9 @@ from backend.utils.translator import Translator
 from backend.utils.speaker import Speaker
 from backend.predictors.alphabet_predictor import predict
 from backend.utils.rapidfuzz_utils import load_words, make_suggester
+from backend.word_mode import WordPredictor
 
-import tensorflow as tf
 import numpy as np
-import cv2
 
 from PIL import Image
 
@@ -40,34 +39,16 @@ socketio = SocketIO(
 # Load Word Model
 # -----------------------------------
 
-print("Loading Word Model...")
-WORD_MODEL_PATH = os.path.join(BASE_DIR, "models", "isl_word_model.keras")
-word_model = tf.keras.models.load_model(WORD_MODEL_PATH)
-print("Models loaded successfully!")
+try:
+    word_predictor = WordPredictor(os.path.join(BASE_DIR, "models"))
+    print("Word ST-GCN model loaded successfully!")
+except Exception as error:
+    word_predictor = None
+    print(f"Word mode unavailable: {error}")
 
 translator = Translator()
 speaker = Speaker()
 word_suggestions = make_suggester(load_words(DICTIONARY_PATH))
-
-# -----------------------------------
-# Class Names
-# -----------------------------------
-
-CLASS_NAMES = [
-    'afternoon','animal','bad','beautiful','big','bird','blind','cat',
-    'cheap','clothing','cold','cow','curved','deaf','dog','dress',
-    'dry','evening','expensive','famous','fast','female','fish','flat',
-    'friday','good','happy','hat','healthy','horse','hot','hour',
-    'light','long','loose','loud','minute','monday','month','morning',
-    'mouse','narrow','new','night','old','pant','pocket','quiet',
-    'sad','saturday','second','shirt','shoes','short','sick','skirt',
-    'slow','small','suit','sunday','t_shirt','tall','thursday','time',
-    'today','tomorrow','tuesday','ugly','warm','wednesday','week',
-    'wet','wide','year','yesterday','young'
-]
-
-# FIX: confidence threshold for word mode
-WORD_CONFIDENCE_THRESHOLD = 75.0
 
 # -----------------------------------
 # Routes
@@ -175,6 +156,9 @@ def handle_frame(data):
         # -------------------------
         if mode == "alphabet":
 
+            if word_predictor:
+                word_predictor.reset()
+
             label, confidence = predict(image)
 
             fps = round(1 / (time.time() - start), 2)
@@ -202,31 +186,25 @@ def handle_frame(data):
             return
 
         # -------------------------
-        # Word Mode
-        # NOTE: word model needs sequence of frames (LSTM)
-        # This single-frame approach is temporary for demo
+        # Word Mode: a separate 48-frame landmark ST-GCN pipeline.
         # -------------------------
-        image_resized = image.resize((224, 224))
-        image_array = np.array(image_resized, dtype=np.float32)
-        image_array = tf.keras.applications.mobilenet_v3.preprocess_input(image_array)
-        image_array = np.expand_dims(image_array, axis=0)
+        if word_predictor is None:
+            emit("prediction", {"label": "", "confidence": 0, "fps": 0, "status": "Word model is unavailable."})
+            return
 
-        prediction = word_model.predict(image_array, verbose=0)
-
-        idx = np.argmax(prediction)
-        confidence = float(prediction[0][idx]) * 100
+        word_result = word_predictor.process(frame)
 
         fps = round(1 / (time.time() - start), 2)
 
-        print(f"[WORD] {CLASS_NAMES[idx]} ({round(confidence, 2)}%)")
-
-        state.current_prediction = CLASS_NAMES[idx]
-        state.current_confidence = round(confidence, 2)
+        state.current_prediction = word_result["label"]
+        state.current_confidence = round(word_result["confidence"], 2)
 
         emit("prediction", {
-            "label": CLASS_NAMES[idx],
-            "confidence": round(confidence, 2),
-            "fps": fps
+            "label": word_result["label"],
+            "confidence": round(word_result["confidence"], 2),
+            "fps": fps,
+            "stable": word_result["stable"],
+            "status": word_result["status"],
         })
 
     except Exception as e:

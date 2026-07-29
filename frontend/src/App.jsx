@@ -3,6 +3,7 @@ import Header from './components/Header'
 import WebcamPanel from './components/WebcamPanel'
 import ModeToggle from './components/ModeToggle'
 import LetterBuffer from './components/LetterBuffer'
+import WordBuffer from './components/WordBuffer'
 import WordSuggestions from './components/WordSuggestions'
 import SentenceBuilder from './components/SentenceBuilder'
 import BilingualOutput from './components/BilingualOutput'
@@ -18,6 +19,7 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState('connecting')
 
   const [letterBuffer, setLetterBuffer] = useState('')
+  const [wordBuffer, setWordBuffer] = useState('')
   const [isFrozen, setIsFrozen] = useState(false)
 
   const [sentenceWords, setSentenceWords] = useState([])
@@ -26,11 +28,15 @@ export default function App() {
   const [isTranslating, setIsTranslating] = useState(false)
   const [transcript, setTranscript] = useState([])
 
-  function handlePrediction({ label, confidence }) {
+  function handlePrediction({ label, confidence, stable }) {
     // One click creates one server prediction.  Do not wait for a second
     // frame: alphabet capture is intentionally a single-frame interaction.
-    if (mode !== 'alphabet' || !label) return
-    setLetterBuffer((previous) => previous + label.toUpperCase())
+    if (!label) return
+    if (mode === 'alphabet') {
+      setLetterBuffer((previous) => previous + label.toUpperCase())
+      return
+    }
+    if (mode === 'word' && stable) setWordBuffer(label)
   }
   
 
@@ -45,6 +51,12 @@ export default function App() {
   function handleSelectSuggestion(word) {
     setSentenceWords((prev) => [...prev, word])
     setLetterBuffer('')
+  }
+
+  function handleAddWordBuffer() {
+    if (!wordBuffer) return
+    setSentenceWords((previous) => [...previous, wordBuffer.replaceAll('_', ' ')])
+    setWordBuffer('')
   }
 
   function handleAddSpace() {
@@ -132,7 +144,10 @@ export default function App() {
 
           <ModeToggle
             mode={mode}
-            setMode={setMode}
+            setMode={(nextMode) => {
+              setMode(nextMode)
+              setWordBuffer('')
+            }}
           />
 
           <BilingualOutput
@@ -146,18 +161,12 @@ export default function App() {
 
           {console.log("Current Buffer:", letterBuffer)}
 
-          <LetterBuffer
-            buffer={letterBuffer}
-            onBackspace={handleBackspace}
-            onClear={handleClearBuffer}
-            onFreeze={() => setIsFrozen((f) => !f)}
-            isFrozen={isFrozen}
-          />
-
-          <WordSuggestions
-            letterBuffer={letterBuffer}
-            onSelect={handleSelectSuggestion}
-          />
+          {mode === 'alphabet' ? <>
+            <LetterBuffer buffer={letterBuffer} onBackspace={handleBackspace} onClear={handleClearBuffer} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
+            <WordSuggestions letterBuffer={letterBuffer} onSelect={handleSelectSuggestion} />
+          </> : (
+            <WordBuffer word={wordBuffer} onAdd={handleAddWordBuffer} onClear={() => setWordBuffer('')} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
+          )}
 
           <SentenceBuilder
             words={sentenceWords}

@@ -19,6 +19,7 @@ export default function WebcamPanel({
   const intervalRef = useRef(null)
   const countdownRef = useRef(null)
   const modeRef = useRef(mode)
+  const predictionHandlerRef = useRef(onPrediction)
   const [cameraError, setCameraError] = useState(null)
   const [currentLetter, setCurrentLetter] = useState(null)
   const [confidence, setConfidence] = useState(0)
@@ -29,6 +30,13 @@ export default function WebcamPanel({
   useEffect(() => {
     modeRef.current = mode
   }, [mode])
+
+  // The socket listener is registered only once. Keep its callback current so
+  // switching from alphabet to word mode cannot route word predictions into
+  // the alphabet letter buffer.
+  useEffect(() => {
+    predictionHandlerRef.current = onPrediction
+  }, [onPrediction])
 
   // Camera lifecycle
   useEffect(() => {
@@ -68,7 +76,7 @@ export default function WebcamPanel({
       setCaptureStatus(status || null)
       setConfidence(conf ?? 0)
       if (serverFps) setFps(serverFps)
-      onPrediction?.({ label, confidence: conf ?? 0 })
+      predictionHandlerRef.current?.({ label, confidence: conf ?? 0, stable: Boolean(payload?.stable) })
     })
 
     return () => {
@@ -97,7 +105,7 @@ export default function WebcamPanel({
       canvas.height = video.videoHeight
       ctx.drawImage(video, 0, 0)
       sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, "word")
-    }, 130)
+    }, 80)
     return () => clearInterval(intervalRef.current)
   }, [mode, isFrozen, sessionId])
 
@@ -188,7 +196,7 @@ export default function WebcamPanel({
         {!cameraError && (
           <div className="pointer-events-none absolute left-[15%] top-[16%] h-[66%] w-[70%] rounded-xl border-2 border-teal-400/90 bg-teal-400/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)]">
             <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-teal-400 px-3 py-1 font-mono text-[10px] font-semibold tracking-wide text-ink-950">
-              PLACE BOTH HANDS HERE
+              PLACE HAND(S) HERE
             </div>
             <div className="absolute inset-y-3 left-1/2 border-l border-dashed border-teal-300/50" />
           </div>
