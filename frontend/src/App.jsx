@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import Header from './components/Header'
+import AlphabetReference from './components/AlphabetReference'
 import WebcamPanel from './components/WebcamPanel'
 import ModeToggle from './components/ModeToggle'
 import LetterBuffer from './components/LetterBuffer'
@@ -165,6 +166,7 @@ export default function App() {
           {mode === 'alphabet' ? <>
             <LetterBuffer buffer={letterBuffer} onBackspace={handleBackspace} onClear={handleClearBuffer} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
             <WordSuggestions letterBuffer={letterBuffer} onSelect={handleSelectSuggestion} />
+            <AlphabetReference onSelect={(sign) => setLetterBuffer((previous) => previous + sign)} />
           </> : (
             <WordBuffer word={wordBuffer} onAdd={handleAddWordBuffer} onClear={() => setWordBuffer('')} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
           )}

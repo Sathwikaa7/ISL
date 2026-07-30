@@ -22,6 +22,7 @@ from backend import state
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DICTIONARY_PATH = os.path.join(os.path.dirname(BASE_DIR), "data", "english_words.txt")
 AUDIO_DIRECTORY = os.path.join(BASE_DIR, "generated_audio")
+ALPHABET_DATASET_DIRECTORY = os.path.join(os.path.dirname(BASE_DIR), "dataset", "alphabet")
 
 # -----------------------------------
 # Flask App
@@ -116,6 +117,22 @@ def synthesize_speech():
 @app.route("/api/audio/<path:filename>")
 def serve_audio(filename):
     return send_from_directory(AUDIO_DIRECTORY, filename, mimetype="audio/mpeg")
+
+
+@app.route("/api/alphabet-reference/<label>")
+def alphabet_reference(label):
+    """Serve one representative training image for the alphabet reference grid."""
+    if len(label) != 1 or label not in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ":
+        return jsonify({"error": "Unknown alphabet label."}), 404
+
+    folder = os.path.join(ALPHABET_DATASET_DIRECTORY, label)
+    if not os.path.isdir(folder):
+        return jsonify({"error": "Reference image is unavailable."}), 404
+
+    for filename in sorted(os.listdir(folder)):
+        if filename.lower().endswith((".jpg", ".jpeg", ".png")):
+            return send_from_directory(folder, filename)
+    return jsonify({"error": "Reference image is unavailable."}), 404
 
 # -----------------------------------
 # Socket Events
