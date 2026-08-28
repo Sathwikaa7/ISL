@@ -5,7 +5,6 @@ from backend.utils.translator import Translator
 from backend.utils.speaker import Speaker
 from backend.predictors.alphabet_predictor import predict
 from backend.utils.rapidfuzz_utils import load_words, make_suggester
-from backend.word_mode import WordPredictor
 
 import numpy as np
 
@@ -35,17 +34,6 @@ socketio = SocketIO(
     app,
     cors_allowed_origins="*"
 )
-
-# -----------------------------------
-# Load Word Model
-# -----------------------------------
-
-try:
-    word_predictor = WordPredictor(os.path.join(BASE_DIR, "models"))
-    print("Word ST-GCN model loaded successfully!")
-except Exception as error:
-    word_predictor = None
-    print(f"Word mode unavailable: {error}")
 
 translator = Translator()
 speaker = Speaker()
@@ -157,8 +145,6 @@ def handle_frame(data):
     # FIX 1: removed print("RAW DATA:", data) — was spamming terminal
 
     start = time.time()
-    mode = data.get("mode", "alphabet")
-
     try:
 
         image_data = data["image"].split(",")[1]
@@ -168,60 +154,28 @@ def handle_frame(data):
 
         frame = np.array(image)
 
-        # -------------------------
-        # Alphabet Mode
-        # -------------------------
-        if mode == "alphabet":
-
-            if word_predictor:
-                word_predictor.reset()
-
-            label, confidence = predict(image)
-
-            fps = round(1 / (time.time() - start), 2)
-
-            # FIX 2: only emit if hand detected
-            if label is None:
-                emit("prediction", {
-                    "label": "",
-                    "confidence": round(confidence, 2),
-                    "fps": fps
-                })
-                return
-
-            print(f"[ALPHABET] {label} ({round(confidence, 2)}%)")
-
-            state.current_prediction = label
-            state.current_confidence = round(confidence, 2)
-
-            emit("prediction", {
-                "label": label,
-                "confidence": round(confidence, 2),
-                "fps": fps
-            })
-
-            return
-
-        # -------------------------
-        # Word Mode: a separate 48-frame landmark ST-GCN pipeline.
-        # -------------------------
-        if word_predictor is None:
-            emit("prediction", {"label": "", "confidence": 0, "fps": 0, "status": "Word model is unavailable."})
-            return
-
-        word_result = word_predictor.process(frame)
+        label, confidence = predict(image)
 
         fps = round(1 / (time.time() - start), 2)
 
-        state.current_prediction = word_result["label"]
-        state.current_confidence = round(word_result["confidence"], 2)
+        # Only emit a label when a hand was detected.
+        if label is None:
+            emit("prediction", {
+                "label": "",
+                "confidence": round(confidence, 2),
+                "fps": fps
+            })
+            return
+
+        print(f"[ALPHABET] {label} ({round(confidence, 2)}%)")
+
+        state.current_prediction = label
+        state.current_confidence = round(confidence, 2)
 
         emit("prediction", {
-            "label": word_result["label"],
-            "confidence": round(word_result["confidence"], 2),
-            "fps": fps,
-            "stable": word_result["stable"],
-            "status": word_result["status"],
+            "label": label,
+            "confidence": round(confidence, 2),
+            "fps": fps
         })
 
     except Exception as e:
