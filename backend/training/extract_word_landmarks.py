@@ -19,6 +19,7 @@ import csv
 import json
 import re
 from pathlib import Path
+from typing import Iterator
 
 import cv2
 import mediapipe as mp
@@ -35,6 +36,41 @@ FEATURES_PER_NODE = 4
 def safe_label(label: str) -> str:
     """Convert a display folder name into a stable model label."""
     return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+
+
+VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv"}
+
+
+def recording_group(stem: str) -> str:
+    """Keep generated left/right tilt versions of one recording in one split."""
+    return re.sub(r"_(?:left|right)_tilt$", "", stem, flags=re.IGNORECASE)
+
+
+def iter_labeled_videos(input_dir: Path) -> Iterator[tuple[str, Path, str]]:
+    """Read the downloaded Video_Dataset and optional flat Sample Videos.
+
+    Video_Dataset/<word> contains the training clips.  Sample Videos/<word>.mp4
+    contributes one additional independent example for the same word.  The
+    function also supports the older <word>/<clip>.mp4 project layout.
+    """
+    video_dataset = input_dir / "Video_Dataset"
+    if video_dataset.is_dir():
+        for class_dir in sorted(path for path in video_dataset.iterdir() if path.is_dir()):
+            label = safe_label(class_dir.name)
+            for video_path in sorted(path for path in class_dir.iterdir() if path.suffix.lower() in VIDEO_SUFFIXES):
+                yield label, video_path, f"video:{label}:{recording_group(video_path.stem)}"
+
+    sample_videos = input_dir / "Sample Videos"
+    if sample_videos.is_dir():
+        for video_path in sorted(path for path in sample_videos.iterdir() if path.suffix.lower() in VIDEO_SUFFIXES):
+            label = safe_label(video_path.stem)
+            yield label, video_path, f"sample:{label}:{video_path.stem}"
+
+    # Backward compatibility with dataset/words/<class>/<clip>.mp4.
+    for class_dir in sorted(path for path in input_dir.iterdir() if path.is_dir() and path.name not in {"Video_Dataset", "Sample Videos"}):
+        label = safe_label(class_dir.name)
+        for video_path in sorted(path for path in class_dir.iterdir() if path.suffix.lower() in VIDEO_SUFFIXES):
+            yield label, video_path, f"legacy:{label}:{recording_group(video_path.stem)}"
 
 
 def selected_frame_indices(frame_count: int, sequence_length: int) -> np.ndarray:
@@ -130,13 +166,11 @@ def main() -> None:
     if not args.input.is_dir():
         raise FileNotFoundError(f"Input folder does not exist: {args.input}")
 
-    class_dirs = sorted(path for path in args.input.iterdir() if path.is_dir())
-    if not class_dirs:
+    labeled_videos = list(iter_labeled_videos(args.input))
+    if not labeled_videos:
         raise RuntimeError(f"No class folders found in {args.input}")
 
-    labels = {safe_label(path.name): path.name for path in class_dirs}
-    if len(labels) != len(class_dirs):
-        raise RuntimeError("Two class folder names become the same normalized label.")
+    labels = {label: label.replace("_", " ").title() for label, _, _ in labeled_videos}
 
     args.output.mkdir(parents=True, exist_ok=True)
     with (args.output / "classes.json").open("w", encoding="utf-8") as file:
@@ -151,31 +185,31 @@ def main() -> None:
         min_detection_confidence=0.5,
         min_tracking_confidence=0.5,
     ) as hands:
-        for class_dir in class_dirs:
-            label = safe_label(class_dir.name)
+        for label in sorted(labels):
             output_dir = args.output / label
             output_dir.mkdir(parents=True, exist_ok=True)
-            videos = sorted(path for path in class_dir.iterdir() if path.suffix.lower() in {".mp4", ".avi", ".mov", ".mkv"})
-            print(f"{class_dir.name}: {len(videos)} videos")
-            for video_path in videos:
-                output_path = output_dir / f"{video_path.stem}.npy"
+            videos = [(video_path, group_id) for video_label, video_path, group_id in labeled_videos if video_label == label]
+            print(f"{labels[label]}: {len(videos)} videos")
+            for video_path, group_id in videos:
+                source_prefix = "sample" if group_id.startswith("sample:") else "video"
+                output_path = output_dir / f"{source_prefix}__{video_path.stem}.npy"
                 if output_path.exists() and not args.overwrite:
                     extracted += 1
-                    manifest_rows.append([str(output_path), label, video_path.name, "existing"])
+                    manifest_rows.append([str(output_path.resolve()), label, group_id, video_path.name, "existing"])
                     continue
                 sequence = extract_video(video_path, hands, args.frames)
                 if sequence is None:
                     skipped += 1
                     print(f"  skipped unreadable video: {video_path.name}")
-                    manifest_rows.append(["", label, video_path.name, "skipped"])
+                    manifest_rows.append(["", label, group_id, video_path.name, "skipped"])
                     continue
                 np.save(output_path, sequence)
                 extracted += 1
-                manifest_rows.append([str(output_path), label, video_path.name, "extracted"])
+                manifest_rows.append([str(output_path.resolve()), label, group_id, video_path.name, "extracted"])
 
     with (args.output / "manifest.csv").open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
-        writer.writerow(["landmark_path", "label", "source_video", "status"])
+        writer.writerow(["landmark_path", "label", "group_id", "source_video", "status"])
         writer.writerows(manifest_rows)
     print(f"Done. {extracted} sequences available; {skipped} videos skipped.")
     print(f"Output: {args.output}")

@@ -1,3 +1,4 @@
+import argparse
 import json
 from pathlib import Path
 import tensorflow as tf
@@ -8,7 +9,15 @@ import matplotlib.pyplot as plt
 # ==========================================
 
 PROJECT_DIR = Path(__file__).resolve().parents[2]
-DATASET_PATH = PROJECT_DIR / "dataset" / "alphabet"
+parser = argparse.ArgumentParser(description="Train the alphabet/digit recognizer.")
+parser.add_argument(
+    "--dataset",
+    type=Path,
+    default=PROJECT_DIR / "dataset" / "alphabet_cropped",
+    help="Hand-cropped training dataset. Use dataset/alphabet only if preprocessing was not run.",
+)
+args = parser.parse_args()
+DATASET_PATH = args.dataset
 MODEL_DIR = PROJECT_DIR / "backend" / "models"
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 

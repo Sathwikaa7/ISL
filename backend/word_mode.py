@@ -16,10 +16,12 @@ from backend.training.train_word_stgcn import GraphConvolution, STGCNBlock
 
 
 class WordPredictor:
-    CONFIDENCE_THRESHOLD = 0.65
-    REQUIRED_VOTES = 2
-    VOTE_WINDOW = 3
-    PREDICT_EVERY = 1
+    # Reject uncertain gestures instead of forcing a word label.  This is
+    # especially important when a live signer differs from the video dataset.
+    CONFIDENCE_THRESHOLD = 0.80
+    REQUIRED_VOTES = 3
+    VOTE_WINDOW = 4
+    PREDICT_EVERY = 2
     COOLDOWN_SECONDS = 1.5
 
     def __init__(self, models_dir: str):
@@ -81,7 +83,7 @@ class WordPredictor:
         label = self.classes[index]
         if confidence < self.CONFIDENCE_THRESHOLD * 100:
             self.votes.clear()
-            return {"label": label, "confidence": confidence, "stable": False, "status": "Hold the complete sign clearly."}
+            return {"label": "", "confidence": confidence, "stable": False, "status": "Not confident enough — repeat the complete sign clearly."}
 
         self.votes.append(index)
         stable = self.votes.count(index) >= self.REQUIRED_VOTES

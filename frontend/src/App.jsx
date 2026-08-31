@@ -2,7 +2,9 @@ import { useState } from 'react'
 import Header from './components/Header'
 import AlphabetReference from './components/AlphabetReference'
 import WebcamPanel from './components/WebcamPanel'
+import ModeToggle from './components/ModeToggle'
 import LetterBuffer from './components/LetterBuffer'
+import WordBuffer from './components/WordBuffer'
 import WordSuggestions from './components/WordSuggestions'
 import SentenceBuilder from './components/SentenceBuilder'
 import BilingualOutput from './components/BilingualOutput'
@@ -12,10 +14,12 @@ import { createSessionId } from './services/utils'
 
 export default function App() {
   const [sessionId] = useState(createSessionId)
+  const [mode, setMode] = useState('alphabet')
 
   const [connectionStatus, setConnectionStatus] = useState('connecting')
 
   const [letterBuffer, setLetterBuffer] = useState('')
+  const [wordBuffer, setWordBuffer] = useState('')
   const [isFrozen, setIsFrozen] = useState(false)
 
   const [sentenceWords, setSentenceWords] = useState([])
@@ -24,10 +28,14 @@ export default function App() {
   const [isTranslating, setIsTranslating] = useState(false)
   const [transcript, setTranscript] = useState([])
 
-  function handlePrediction({ label }) {
+  function handlePrediction({ label, stable }) {
     // One click creates one server prediction.  Do not wait for a second
     // frame: alphabet capture is intentionally a single-frame interaction.
     if (!label) return
+    if (mode === 'word') {
+      if (stable) setWordBuffer(label)
+      return
+    }
     if (!/^[A-Za-z0-9]$/.test(label)) return
     setLetterBuffer((previous) => previous + label.toUpperCase())
   }
@@ -44,6 +52,12 @@ export default function App() {
   function handleSelectSuggestion(word) {
     setSentenceWords((prev) => [...prev, word])
     setLetterBuffer('')
+  }
+
+  function handleAddWordBuffer() {
+    if (!wordBuffer) return
+    setSentenceWords((previous) => [...previous, wordBuffer.replaceAll('_', ' ')])
+    setWordBuffer('')
   }
 
   function handleAddSpace() {
@@ -122,12 +136,14 @@ export default function App() {
 
           <WebcamPanel
             sessionId={sessionId}
-            mode="alphabet"
+            mode={mode}
             onPrediction={handlePrediction}
             isFrozen={isFrozen}
             connectionStatus={connectionStatus}
             setConnectionStatus={setConnectionStatus}
           />
+
+          <ModeToggle mode={mode} setMode={(nextMode) => { setMode(nextMode); setWordBuffer('') }} />
 
           <BilingualOutput
             english={englishOutput}
@@ -140,9 +156,13 @@ export default function App() {
 
           {console.log("Current Buffer:", letterBuffer)}
 
-          <LetterBuffer buffer={letterBuffer} onBackspace={handleBackspace} onClear={handleClearBuffer} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
-          <WordSuggestions letterBuffer={letterBuffer} onSelect={handleSelectSuggestion} />
-          <AlphabetReference onSelect={(sign) => setLetterBuffer((previous) => previous + sign)} />
+          {mode === 'alphabet' ? <>
+            <LetterBuffer buffer={letterBuffer} onBackspace={handleBackspace} onClear={handleClearBuffer} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
+            <WordSuggestions letterBuffer={letterBuffer} onSelect={handleSelectSuggestion} />
+            <AlphabetReference onSelect={(sign) => setLetterBuffer((previous) => previous + sign)} />
+          </> : (
+            <WordBuffer word={wordBuffer} onAdd={handleAddWordBuffer} onClear={() => setWordBuffer('')} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
+          )}
 
           <SentenceBuilder
             words={sentenceWords}

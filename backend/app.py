@@ -5,6 +5,7 @@ from backend.utils.translator import Translator
 from backend.utils.speaker import Speaker
 from backend.predictors.alphabet_predictor import predict
 from backend.utils.rapidfuzz_utils import load_words, make_suggester
+from backend.word_mode import WordPredictor
 
 import numpy as np
 
@@ -34,6 +35,13 @@ socketio = SocketIO(
     app,
     cors_allowed_origins="*"
 )
+
+try:
+    word_predictor = WordPredictor(os.path.join(BASE_DIR, "models"))
+    print("Word ST-GCN model loaded successfully!")
+except Exception as error:
+    word_predictor = None
+    print(f"Word mode unavailable: {error}")
 
 translator = Translator()
 speaker = Speaker()
@@ -153,6 +161,18 @@ def handle_frame(data):
         ).convert("RGB")
 
         frame = np.array(image)
+
+        mode = data.get("mode", "alphabet")
+        if mode == "word":
+            if word_predictor is None:
+                emit("prediction", {"label": "", "confidence": 0, "fps": 0, "status": "Word model is unavailable."})
+                return
+            word_result = word_predictor.process(frame)
+            fps = round(1 / (time.time() - start), 2)
+            state.current_prediction = word_result["label"]
+            state.current_confidence = round(word_result["confidence"], 2)
+            emit("prediction", {"label": word_result["label"], "confidence": round(word_result["confidence"], 2), "fps": fps, "stable": word_result["stable"], "status": word_result["status"]})
+            return
 
         label, confidence = predict(image)
 

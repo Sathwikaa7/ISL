@@ -20,6 +20,7 @@ export default function WebcamPanel({
   const countdownRef = useRef(null)
   const modeRef = useRef(mode)
   const predictionHandlerRef = useRef(onPrediction)
+  const wordRequestInFlightRef = useRef(false)
   const [cameraError, setCameraError] = useState(null)
   const [currentLetter, setCurrentLetter] = useState(null)
   const [confidence, setConfidence] = useState(0)
@@ -70,6 +71,10 @@ export default function WebcamPanel({
     socket.on('connect_error', () => setConnectionStatus('error'))
 
     socket.on('prediction', (payload) => {
+      // Word frames are processed serially.  Without this release, sending a
+      // frame every 80ms builds a stale Socket.IO queue when inference takes
+      // longer than 80ms and corrupts the temporal gesture sequence.
+      wordRequestInFlightRef.current = false
       const { label, confidence: conf, fps: serverFps, status } = payload || {}
       if (label === undefined) return
       setCurrentLetter(label || null)
@@ -89,7 +94,8 @@ export default function WebcamPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Streaming loop (word mode only)
+  // Streaming loop (word mode only). Send the next frame only after the
+  // prediction for the previous one returns; this keeps the sequence live.
   useEffect(() => {
     if (mode !== "word") return
     if (isFrozen) {
@@ -97,16 +103,27 @@ export default function WebcamPanel({
       return
     }
     intervalRef.current = setInterval(() => {
+      if (wordRequestInFlightRef.current) return
       const video = videoRef.current
       const canvas = canvasRef.current
       if (!video || !canvas || video.readyState < 2) return
       const ctx = canvas.getContext("2d")
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      ctx.drawImage(video, 0, 0)
+      const sourceWidth = video.videoWidth
+      const sourceHeight = video.videoHeight
+      const sourceX = Math.round(sourceWidth * CAPTURE_GUIDE.x)
+      const sourceY = Math.round(sourceHeight * CAPTURE_GUIDE.y)
+      const guideWidth = Math.round(sourceWidth * CAPTURE_GUIDE.width)
+      const guideHeight = Math.round(sourceHeight * CAPTURE_GUIDE.height)
+      canvas.width = guideWidth
+      canvas.height = guideHeight
+      ctx.drawImage(video, sourceX, sourceY, guideWidth, guideHeight, 0, 0, guideWidth, guideHeight)
+      wordRequestInFlightRef.current = true
       sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, "word")
-    }, 80)
-    return () => clearInterval(intervalRef.current)
+    }, 120)
+    return () => {
+      clearInterval(intervalRef.current)
+      wordRequestInFlightRef.current = false
+    }
   }, [mode, isFrozen, sessionId])
 
   // Cleanup countdown on unmount
@@ -196,7 +213,7 @@ export default function WebcamPanel({
         {!cameraError && (
           <div className="pointer-events-none absolute left-[15%] top-[16%] h-[66%] w-[70%] rounded-xl border-2 border-teal-400/90 bg-teal-400/5 shadow-[0_0_0_9999px_rgba(2,6,23,0.18)]">
             <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-teal-400 px-3 py-1 font-mono text-[10px] font-semibold tracking-wide text-ink-950">
-              PLACE HAND(S) HERE
+              {mode === 'word' ? 'PLACE FACE, UPPER BODY & HANDS HERE' : 'PLACE HAND(S) HERE'}
             </div>
             <div className="absolute inset-y-3 left-1/2 border-l border-dashed border-teal-300/50" />
           </div>
