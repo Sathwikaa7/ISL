@@ -11,6 +11,7 @@ import BilingualOutput from './components/BilingualOutput'
 import TranscriptHistory from './components/TranscriptHistory'
 import { translateSentence } from './services/api'
 import { createSessionId } from './services/utils'
+import { resetWordCapture } from './services/socket'
 
 export default function App() {
   const [sessionId] = useState(createSessionId)
@@ -20,6 +21,7 @@ export default function App() {
 
   const [letterBuffer, setLetterBuffer] = useState('')
   const [wordBuffer, setWordBuffer] = useState('')
+  const [wordCaptureRequest, setWordCaptureRequest] = useState(0)
   const [isFrozen, setIsFrozen] = useState(false)
 
   const [sentenceWords, setSentenceWords] = useState([])
@@ -33,7 +35,12 @@ export default function App() {
     // frame: alphabet capture is intentionally a single-frame interaction.
     if (!label) return
     if (mode === 'word') {
-      if (stable) setWordBuffer(label)
+      if (stable) {
+        setWordBuffer(label)
+        // Stop the camera loop immediately after one accepted sequence. This
+        // prevents the next neutral/rest position from overwriting the word.
+        setIsFrozen(true)
+      }
       return
     }
     if (!/^[A-Za-z0-9]$/.test(label)) return
@@ -58,6 +65,13 @@ export default function App() {
     if (!wordBuffer) return
     setSentenceWords((previous) => [...previous, wordBuffer.replaceAll('_', ' ')])
     setWordBuffer('')
+  }
+
+  function handleCaptureNextWord() {
+    setWordBuffer('')
+    resetWordCapture()
+    setIsFrozen(false)
+    setWordCaptureRequest((previous) => previous + 1)
   }
 
   function handleAddSpace() {
@@ -137,13 +151,21 @@ export default function App() {
           <WebcamPanel
             sessionId={sessionId}
             mode={mode}
+            wordCaptureRequest={wordCaptureRequest}
             onPrediction={handlePrediction}
             isFrozen={isFrozen}
             connectionStatus={connectionStatus}
             setConnectionStatus={setConnectionStatus}
           />
 
-          <ModeToggle mode={mode} setMode={(nextMode) => { setMode(nextMode); setWordBuffer('') }} />
+          <ModeToggle mode={mode} setMode={(nextMode) => {
+            setMode(nextMode)
+            setWordBuffer('')
+            // Word mode begins paused; each word requires an intentional
+            // capture rather than continuously interpreting the webcam.
+            setIsFrozen(nextMode === 'word')
+            if (nextMode === 'word') resetWordCapture()
+          }} />
 
           <BilingualOutput
             english={englishOutput}
@@ -161,7 +183,7 @@ export default function App() {
             <WordSuggestions letterBuffer={letterBuffer} onSelect={handleSelectSuggestion} />
             <AlphabetReference onSelect={(sign) => setLetterBuffer((previous) => previous + sign)} />
           </> : (
-            <WordBuffer word={wordBuffer} onAdd={handleAddWordBuffer} onClear={() => setWordBuffer('')} onFreeze={() => setIsFrozen((f) => !f)} isFrozen={isFrozen} />
+            <WordBuffer word={wordBuffer} onAdd={handleAddWordBuffer} onClear={() => setWordBuffer('')} onCaptureNext={handleCaptureNextWord} isFrozen={isFrozen} />
           )}
 
           <SentenceBuilder

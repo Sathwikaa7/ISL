@@ -8,6 +8,7 @@ const CAPTURE_GUIDE = { x: 0.15, y: 0.16, width: 0.70, height: 0.66 }
 export default function WebcamPanel({
   sessionId,
   mode,
+  wordCaptureRequest,
   onPrediction,
   isFrozen,
   connectionStatus,
@@ -21,6 +22,7 @@ export default function WebcamPanel({
   const modeRef = useRef(mode)
   const predictionHandlerRef = useRef(onPrediction)
   const wordRequestInFlightRef = useRef(false)
+  const wordCaptureTimerRef = useRef(null)
   const [cameraError, setCameraError] = useState(null)
   const [currentLetter, setCurrentLetter] = useState(null)
   const [confidence, setConfidence] = useState(0)
@@ -94,42 +96,46 @@ export default function WebcamPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Streaming loop (word mode only). Send the next frame only after the
-  // prediction for the previous one returns; this keeps the sequence live.
+  // A word sign is recorded at camera speed in one short, deliberate clip.
+  // Do not continuously stream it at inference speed: a slow CPU otherwise
+  // mixes the completed sign with several seconds of resting position.
   useEffect(() => {
-    if (mode !== "word") return
-    if (isFrozen) {
-      clearInterval(intervalRef.current)
-      return
-    }
-    intervalRef.current = setInterval(() => {
-      if (wordRequestInFlightRef.current) return
+    if (mode !== 'word' || !wordCaptureRequest) return
+    let captured = 0
+    clearInterval(wordCaptureTimerRef.current)
+    wordCaptureTimerRef.current = setInterval(() => {
       const video = videoRef.current
       const canvas = canvasRef.current
       if (!video || !canvas || video.readyState < 2) return
       const ctx = canvas.getContext("2d")
       const sourceWidth = video.videoWidth
       const sourceHeight = video.videoHeight
-      const sourceX = Math.round(sourceWidth * CAPTURE_GUIDE.x)
-      const sourceY = Math.round(sourceHeight * CAPTURE_GUIDE.y)
-      const guideWidth = Math.round(sourceWidth * CAPTURE_GUIDE.width)
-      const guideHeight = Math.round(sourceHeight * CAPTURE_GUIDE.height)
-      canvas.width = guideWidth
-      canvas.height = guideHeight
-      ctx.drawImage(video, sourceX, sourceY, guideWidth, guideHeight, 0, 0, guideWidth, guideHeight)
-      wordRequestInFlightRef.current = true
-      sendFrame(canvas.toDataURL("image/jpeg", 0.9), sessionId, "word")
+      // Word signs use face and upper-body position as well as hand motion;
+      // send the full frame instead of the alphabet hand-only guide crop.
+      // 320×240 retains the landmarks while keeping the queued 24-frame
+      // capture small enough for Socket.IO on a normal laptop.
+      canvas.width = 320
+      canvas.height = 240
+      ctx.drawImage(video, 0, 0, sourceWidth, sourceHeight, 0, 0, 320, 240)
+      captured += 1
+      setCaptureStatus(`Recording sign… ${captured}/24`)
+      sendFrame(canvas.toDataURL('image/jpeg', 0.75), sessionId, 'word')
+      if (captured >= 24) {
+        clearInterval(wordCaptureTimerRef.current)
+        setCaptureStatus('Reading captured sign…')
+      }
     }, 120)
     return () => {
-      clearInterval(intervalRef.current)
+      clearInterval(wordCaptureTimerRef.current)
       wordRequestInFlightRef.current = false
     }
-  }, [mode, isFrozen, sessionId])
+  }, [mode, wordCaptureRequest, sessionId])
 
   // Cleanup countdown on unmount
   useEffect(() => {
     return () => {
       if (countdownRef.current) clearInterval(countdownRef.current)
+      if (wordCaptureTimerRef.current) clearInterval(wordCaptureTimerRef.current)
     }
   }, [])
 

@@ -5,7 +5,7 @@ from backend.utils.translator import Translator
 from backend.utils.speaker import Speaker
 from backend.predictors.alphabet_predictor import predict
 from backend.utils.rapidfuzz_utils import load_words, make_suggester
-from backend.word_mode import WordPredictor
+from backend.word_holistic_mode import WordHolisticPredictor
 
 import numpy as np
 
@@ -37,8 +37,8 @@ socketio = SocketIO(
 )
 
 try:
-    word_predictor = WordPredictor(os.path.join(BASE_DIR, "models"))
-    print("Word ST-GCN model loaded successfully!")
+    word_predictor = WordHolisticPredictor(os.path.join(BASE_DIR, "models"), "isl_word_common.keras")
+    print("Six-phrase full-body word model loaded successfully!")
 except Exception as error:
     word_predictor = None
     print(f"Word mode unavailable: {error}")
@@ -142,6 +142,13 @@ def connected():
 @socketio.on("disconnect")
 def disconnected():
     print("Client Disconnected")
+
+
+@socketio.on("reset_word_capture")
+def reset_word_capture():
+    """Begin a fresh word-sign sequence and discard the previous frames."""
+    if word_predictor is not None:
+        word_predictor.reset()
 
 # -----------------------------------
 # Predict Frame

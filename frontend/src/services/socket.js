@@ -47,3 +47,8 @@ export function sendFrame(base64Image, sessionId, mode) {
     })
   }
 }
+
+export function resetWordCapture() {
+  const s = getSocket()
+  if (s.connected) s.emit('reset_word_capture')
+}

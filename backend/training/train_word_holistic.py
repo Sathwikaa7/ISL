@@ -13,9 +13,11 @@ if str(PROJECT_DIR) not in sys.path:
 
 from backend.training.word_holistic_landmarks import FEATURES, NUM_NODES
 
-def load_dataset(root, minimum):
+def load_dataset(root, minimum, allowed_classes=None):
     x, y, classes = [], [], []
     for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+        if allowed_classes is not None and directory.name not in allowed_classes:
+            continue
         files = sorted(directory.glob('*.npy'))
         if len(files) < minimum: continue
         classes.append(directory.name)
@@ -28,9 +30,17 @@ def main():
     parser.add_argument('--dataset', type=Path, default=PROJECT_DIR / 'dataset' / 'word_holistic_landmarks')
     parser.add_argument('--epochs', type=int, default=80)
     parser.add_argument('--min-samples', type=int, default=30)
+    parser.add_argument(
+        '--classes',
+        help='Comma-separated existing class labels, for example hello,thank_you,come,drink,tea,wrong.',
+    )
+    parser.add_argument('--model-name', default='isl_word_holistic.keras')
     args = parser.parse_args()
     tf.keras.utils.set_random_seed(42)
-    x, y, classes = load_dataset(args.dataset, args.min_samples)
+    allowed_classes = set(args.classes.split(',')) if args.classes else None
+    x, y, classes = load_dataset(args.dataset, args.min_samples, allowed_classes)
+    if len(classes) < 2:
+        raise RuntimeError('At least two selected classes with enough extracted sequences are required.')
     rng = np.random.default_rng(42); train=[]; val=[]
     for label in np.unique(y):
         indices=np.flatnonzero(y==label); rng.shuffle(indices); cut=max(1, round(len(indices)*.2)); val.extend(indices[:cut]); train.extend(indices[cut:])
@@ -45,11 +55,12 @@ def main():
     model=tf.keras.Model(inputs, outputs)
     model.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
     models=PROJECT_DIR/'backend'/'models'; models.mkdir(exist_ok=True)
-    path=models/'isl_word_holistic.keras'
+    path=models/args.model_name
     callbacks=[tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=12, restore_best_weights=True), tf.keras.callbacks.ModelCheckpoint(str(path), monitor='val_loss', save_best_only=True)]
     model.fit(x[train], y[train], validation_data=(x[val],y[val]), epochs=args.epochs, batch_size=16, callbacks=callbacks, verbose=2)
     model.save(str(path))
-    (models/'word_holistic_classes.json').write_text(json.dumps(classes, indent=2), encoding='utf-8')
+    classes_path = models / f'{path.stem}_classes.json'
+    classes_path.write_text(json.dumps(classes, indent=2), encoding='utf-8')
     print(f'Saved {path} with {len(classes)} classes')
 
 if __name__ == '__main__': main()
